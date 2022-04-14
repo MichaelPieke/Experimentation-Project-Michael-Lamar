@@ -1,0 +1,145 @@
+---
+title: "R Notebook"
+output: html_notebook
+---
+
+
+```{r}
+library(tidyverse)
+library(readxl)
+library(readr)
+setwd("C:/Users/scro0/Documents/Michael Master AI/Experimentation/Project")
+options(width = 13)
+results <- read.csv("results_final.csv")
+
+```
+
+```{r}
+library(tidyverse)
+results$X. <- as.numeric(results$X.)
+results <- na.omit(results)
+results <- subset(results, select = -c(X,X.1,X.2,X.3,X.5,X.6, X.11) )
+names(results) <- c("Participant","Trial Type", "Input", "Selection", "Value", "RT")
+#results (8) is the version with the unrounded RTs
+#RTs <- read_table2("results (8).csv")
+#RTs <- separate(RTs, "#", c("Participant","Trial Type", "Input", "Selection", "Value", "dhdhd", "dss", "eueue", "tsts","ddhhdhd", "fhfh", "RT"), sep = ",")
+
+
+```
+
+
+```{r}
+#Helps with making data more interpretable
+cleaned <- filter(results, Value != "Start")
+
+#Need to get rid of age, as too many people did not fill it in
+cleaned <- filter(cleaned, Input != "inputAGE")
+
+#0 and 1 are are not poems, so we can remove these
+cleaned <- filter(cleaned, Input != 0)
+cleaned <- filter(cleaned, Input != 1)
+
+#RT we can do separately, Selection is irrelevant
+cleaned <- subset(cleaned, select = -c(RT, Selection))
+
+cleaned$Poem <- rep(0, length(cleaned$Participant))
+```
+
+```{r}
+
+#For 5 people, knowledge did not register. Need to add in dummy rows to make sure that the next bit of code works properly
+for(i in 1:length(cleaned$Participant))
+{
+  if(cleaned$Input[i] == "inputED")
+    {
+      if((cleaned$Input[(i+1)] != "inputKNOWLEDGE" ))
+      {
+        new_row <- cleaned[i,]
+        new_row$Input <- "inputKNOWLEDGE"
+        new_row$Value <- NA
+        cleaned <- rbind(cleaned[1:i, ], new_row, cleaned[(i+1):length(cleaned$Participant), ])
+      }
+        
+    }
+      
+  
+  
+}
+```
+
+```{r}
+
+#Add in extra column for poems. This makes pivoting easier
+for(i in seq(from= 4, to=length(cleaned$Participant), by= 5))
+     
+{
+  cleaned$Poem[i:(i+4)] <- rep(cleaned$Input[i],5)
+}
+
+```
+```{r}
+#Pivot dataframe to get into tidy state
+cleaned <- pivot_wider(cleaned, names_from = Input, values_from = Value)
+```
+
+```{r}
+#remove unnecessary columns, as we already have a poem column (2-12 were poems)
+cleaned <- subset(cleaned, select = -c(`2`, `3`, `4`, `5`, `6`, `7`, `8`, `9`,`10`, `11`, `12`))
+```
+
+
+```{r}
+#Add in dummy variables for demographics so that they correspond to each row per participant.
+for(i in seq(from=1, to=length(cleaned$Participant), by=12))
+     
+{
+  cleaned$inputGEN[i:(i+11)] <- rep(cleaned$inputGEN[i],12)
+  cleaned$inputED[i:(i+11)] <- rep(cleaned$inputED[i],12)
+  cleaned$inputKNOWLEDGE[i:(i+11)] <- rep(cleaned$inputKNOWLEDGE[i],12)
+}
+
+```
+
+
+
+
+
+
+
+```{r}
+#Get rid of unneccessary rows
+cleaned <- filter(cleaned, (`Trial Type` == "AI-poem" | `Trial Type` == "Human-poem"))
+```
+
+
+
+```{r}
+names(cleaned) <- c("Participant", "Actual", "Poem", "Gender", "Education", "Knowledge", "Predicted", "Confidence", "Read poem")
+
+cleaned$Accuracy <- rep(0, length(cleaned$Participant))
+
+
+```
+
+
+```{r}
+#Make AI and human poems binary in order to calculate accuracy easily. 1 is AI, 0 is human
+cleaned$Predicted <- ifelse(cleaned$Predicted == "AI-generated", 1, 0)
+```
+```{r}
+cleaned$Actual <- ifelse(cleaned$Actual == "AI-poem", 1, 0)
+```
+```{r}
+#Accuracy = 1 if predicted origin is actual origin
+cleaned$Accuracy <- ifelse(cleaned$Predicted == cleaned$Actual, 1, 0)
+```
+
+
+```{r}
+#Make everything a character so that write.csv() works
+cleaned <- mutate_all(cleaned, as.character)
+```
+
+
+
+

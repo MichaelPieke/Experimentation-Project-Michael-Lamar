@@ -1,0 +1,32 @@
+---
+title: \\"R Notebook\\"
+output: html_notebook
+---
+
+
+```{r}
+library(striprtf)
+
+
+paths <- c(
+"C:/Users/scro0/Documents/Michael Master AI/Experimentation/Project/Poems/Exhausting_Our_Years_XL.rtf", "C:/Users/scro0/Documents/Michael Master AI/Experimentation/Project/Poems/In_Error_XL.rtf", "C:/Users/scro0/Documents/Michael Master AI/Experimentation/Project/Poems/On_A_Journey_XL.rtf",
+"C:/Users/scro0/Documents/Michael Master AI/Experimentation/Project/Poems/The_Bridge_XL.rtf",
+"C:/Users/scro0/Documents/Michael Master AI/Experimentation/Project/Poems/Survivor_XL.rtf")
+
+```
+```{r}
+
+sink("poems.txt")
+
+for (i in 1:length(paths)){
+poems <- read_rtf(paths[i])
+poems <- data.frame(strsplit(as.character(poems), split = "===================="))
+poem <- poems[sample(nrow(poems), 1), ]
+cat(poem)
+cat("\n")
+}
+
+file.show("poems.txt")
+
+```
+

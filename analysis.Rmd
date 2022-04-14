@@ -1,0 +1,328 @@
+---
+title: "R Notebook"
+output: html_notebook
+---
+
+
+```{r}
+library(dplyr)
+library(lme4)
+
+
+#Set your working directory here
+setwd("")
+
+tidy_results <- read.csv("tidy_results.csv")
+tidy_results$Knowledge <- ifelse(tidy_results$Knowledge == "none", NA, tidy_results$Knowledge)
+tidy_results$Knowledge <- as.numeric(tidy_results$Knowledge)
+
+#Change participant IDs to values from 1-52
+unique <- unique(tidy_results$Participant)
+for (i in 1:52)
+{
+  tidy_results$Participant[tidy_results$Participant == unique[i]] <- i
+}
+
+```
+
+
+
+```{r}
+#percentage male participants
+length(tidy_results$Gender[tidy_results$Gender == "Male"])/length(tidy_results$Gender)
+```
+```{r}
+#Percentage of participants with university education
+length(tidy_results$Education[tidy_results$Education == "University"])/length(tidy_results$Education)
+```
+Population is 70% Male and 80% University educated. Hence, the effects on the results may not be reliable.
+
+```{r}
+#remove participant 4, 5, 10, 16, 20, 21, 24, 27, 30, 31 because of interpretation errors
+tidy1 <- tidy_results
+cleaned_results <- tidy_results[-c(31:50, 91:100, 131:140, 271:280, 321:330, 151:160, 191:210, 231:240, 261:270, 291:310), ]
+
+#get percentage University
+edu_percentage <- length(tidy1$Education[tidy1$Education == "University"])/length(tidy1$Education)
+edu_percentage
+
+#get percentage male
+gender_percentage <- length(tidy1$Gender[tidy1$Gender == "Male"])/length(tidy1$Gender)
+gender_percentage
+
+#sum of correct answers and confidence scale for removed and mean of knowledge
+sum_accuracy <- cleaned_results %>%
+  group_by(Participant) %>%
+  summarise(total = sum(Accuracy))
+
+confidence_scale <- cleaned_results %>%
+  group_by(Participant) %>%
+  summarise(mean_confidence = mean(Confidence))
+
+Knowledge <- tidy1 %>%
+  group_by(Participant) %>%
+  summarise(mean_knowledge = mean(Knowledge))
+
+Knowledge_clean <- cleaned_results %>%
+  group_by(Participant) %>%
+  summarise(mean_knowledge = mean(Knowledge))
+
+#for unremoved
+sum_accuracy_unremoved <- tidy1 %>%
+  group_by(Participant) %>%
+  summarise(total = sum(Accuracy))
+
+confidence_scale_unremoved <- tidy1 %>%
+  group_by(Participant) %>%
+  summarise(mean_confidence = mean(Confidence))
+
+confidence_scale$Accuracy <- sum_accuracy$total
+confidence_scale_unremoved$Accuracy <- sum_accuracy_unremoved$total
+
+```
+
+```{r}
+#poem stats
+poems_lengths <- c(7,8,3,8,4,7,6,8,4,9)
+mean(poems_lengths)
+sd(poems_lengths)
+```
+
+
+```{r}
+
+#all histograms
+
+hist(Knowledge$mean_knowledge, main = "prior knowledge of poems", xlab = "Knowledge", breaks = c(1:5))
+
+hist(confidence_scale$Accuracy, main = "Accuracy without possible outliers", xlab = "Accuracy", breaks = c(1:10))
+
+hist(confidence_scale_unremoved$Accuracy, main = "Accuracy with possible outliers", xlab =  "Accuracy", breaks = c(1:10))
+
+hist(confidence_scale$mean_confidence, main = "confidence levels without possible outliers", xlab = "Confidence", breaks = c(1:7))
+
+hist(confidence_scale_unremoved$mean_confidence, main = "confidence levels with possible outliers", xlab = "confidence", breaks = c(1:7))
+```
+of the 47 participants whose knowledge was registered, 29 had no knowledge of poetry (1). This means that people with a lot of knowledge of poetry are underrepresented.
+
+```{r}
+
+#Outlier detection
+library(Hmisc)
+library(tidyverse)
+```
+
+```{r}
+#This part is to get the RTs for each round. It would have been easier to add this into the results column, but we came up with this much later and adding it into the original code messed the code up.
+RTs <- read_table2("results (8).csv")
+
+
+RTs <- separate(RTs, "#", c("Participant","Trial Type", "Input", "Selection", "Value", "dhdhd", "dss", "eueue", "tsts","ddhhdhd", "fhfh", "RT"), sep = ",")
+unique_pp <- unique(RTs$Participant)
+#only need ppt ID and RT
+RTs <- na.omit(RTs)
+#na.omit(subset(RTs, select = c(Participant, RT)))
+RTs$RT <- as.numeric(RTs$RT)
+RTs <- na.omit(RTs)
+
+#subtract from start of trial to get reaction times in ms
+for(i in 1:length(unique_pp))
+{
+  RTs$RT[RTs$Participant == unique_pp[i]] <- RTs$RT[RTs$Participant == unique_pp[i]] - RTs$RT[RTs$Participant == unique_pp[i]][1]
+}
+
+RTs <- subset(RTs, select =  -c(`Trial Type`, Input, Value, dss, eueue))
+RTs$Selection <- as.numeric(RTs$Selection)
+
+#Trials 1,2 and 13 are not poems, but demographics pages etc, so we can remove them
+RTs <- filter(RTs, Selection != 1)
+RTs <- filter(RTs, Selection != 2)
+RTs <- filter(RTs, Selection != 13)
+#RTs <- filter(RTs, Selection == 13)
+RTs <- filter(RTs, ddhhdhd == "_Trial_"& fhfh == "End")
+RTs$Diff <- c(0, diff(RTs$RT))
+RTs$Diff[RTs$Diff < 0] <- RTs$RT[RTs$Diff < 0]
+
+for(i in 1:length(unique(RTs$Participant)))
+{
+  RTs$Participant[RTs$Participant == unique(RTs$Participant)[i]] <- i
+}
+#adding rounds to our dataset
+round_vector <- c("r1", "r2","r3","r4","r5","r6","r7","r8","r9","r10")
+RTs$Round <- rep(round_vector, 52)
+
+```
+
+
+```{r}
+
+#make bar plot of log RTs to check for outliers
+g1 <- ggplot(RTs, aes(round(log(Diff), digits = 2))) + geom_bar() + labs(y = "Count", x = "Log(RT)")
+g1
+```
+```{r}
+mean_RT <- mean(log(RTs$Diff)) 
+sd_RT <- sd(log(RTs$Diff))
+
+#check if any RTs are significantly different to the mean RT, i.e. 3 standard deviations away from the mean
+which(log(RTs$Diff) <= mean_RT - 3*sd_RT)
+
+```
+
+
+```{r}
+#Get total RTs 
+total_RT <- filter(RTs, Round == "r10")
+total_RT$MinutesRT <- total_RT$RT/60000
+
+#Get descriptive summary of total RT
+sumtable(total_RT)
+```
+
+```{r}
+#get descriptive summary of response times per poem (Diff)
+sumtable(RTs)
+```
+
+```{r}
+#See if there is any difference in accuracy between poems
+summarise(group_by(tidy_results, Poem), sum = (sum(Accuracy)))
+
+#See if there is any difference in accuracy between participants
+summarise(group_by(tidy_results, Participant), sum = (sum(Accuracy)))
+
+#See if there is any difference in accuracy depending on origin of the poem
+summarise(group_by(tidy_results, Actual), sum = (sum(Accuracy)), accuracy  = sum(Accuracy)/length(Accuracy))
+
+summarise(group_by(cleaned_results, Actual), sum = (sum(Accuracy)), accuracy  = sum(Accuracy)/length(Accuracy))
+
+```
+
+
+```{r}
+
+#aggregate accuracy for t-test. In hindsight, this could have beeen done in a simpler way.
+total_acc <- data.frame((unique(no_outliers$Participant)))
+total_acc$`Total Accuracy` <- rep(0, length(unique(no_outliers$Participant)))
+names(total_acc) <- c("Participant", "Total Accuracy")
+for(i in 1:length(total_acc$Participant))
+  
+{
+  total_acc$`Total Accuracy`[i] <- sum(no_outliers$Accuracy[no_outliers$Participant == total_acc$Participant[i]])
+  total_RT$Participant[i] <- i
+}
+```
+
+```{r}
+#do t-test on aggregated accuracy
+t.test(total_acc$`Total Accuracy`, mu = 5, )
+```
+
+```{r}
+#Do t-tests for accuracy between AI-generated and human-written poems
+
+AI_acc <- data.frame(rep(0,length(unique(cleaned_results$Participant))))
+human_acc <- data.frame(rep(0,length(unique(cleaned_results$Participant))))
+
+AI_acc_unremoved <- data.frame(rep(0,52))
+human_acc_unremoved <- data.frame(rep(0,52))
+
+#aggregate per participant
+for(i in 1:length(unique(cleaned_results$Participant)))
+{
+  AI_acc[i,] <- sum(cleaned_results$Accuracy[cleaned_results$Participant == i & cleaned_results$Actual == 1])
+  human_acc[i,] <- sum(cleaned_results$Accuracy[cleaned_results$Participant == i & cleaned_results$Actual == 0])
+  
+}
+
+for (i in 1:length(unique(tidy_results$Participant)))
+{
+  AI_acc_unremoved[i,] <- sum(tidy_results$Accuracy[cleaned_results$Participant == i & cleaned_results$Actual == 1])
+  human_acc_unremoved[i,] <- sum(tidy_results$Accuracy[cleaned_results$Participant == i & cleaned_results$Actual == 0])
+}
+
+#do t-tests for both removed and unremoved
+
+#removed
+names(AI_acc) <- "Accuracy"
+names(AI_acc_unremoved) <- "Accuracy"
+names(human_acc) <- "Accuracy"
+names(human_acc_unremoved) <- "Accuracy"
+
+t.test(x = AI_acc$Accuracy, y = human_acc$Accuracy, paired = TRUE)
+
+t.test(x = AI_acc_unremoved$Accuracy, y = human_acc_unremoved$Accuracy, paired = TRUE)
+```
+
+```{r}
+#Mixed effects models
+#baseline model 
+Acc_model_base <- glm(Accuracy ~ 1, data = cleaned_results, family = binomial)
+summary(Acc_model_base)
+
+#mixed model for participants
+#model 0
+m0_unremoved <- glmer(Accuracy ~ 1 + (1 | Participant), data = tidy1, family = binomial(link = "probit"))
+m0 <- glmer(Accuracy ~ 1 + (1 | Participant), data = cleaned_results, family = binomial(link = "probit"))
+summary(m0)
+summary(m0_unremoved)
+
+aic.glm <- AIC(logLik(Acc_model_base))
+aic.glmer <- AIC(logLik(m0))
+aic.glmer; aic.glm 
+
+#adding rounds to our dataset
+round_vector <- c("r1", "r2","r3","r4","r5","r6","r7","r8","r9","r10")
+big_one <- rep.int(round_vector, 39)
+cleaned_results$Round <- big_one
+big_one2 <- rep.int(round_vector, 52)
+tidy1$Round <- big_one2
+
+#checking for round as random effect (which does not converge)
+m0.1_unremoved <- glmer(Accuracy ~ 1 + (1 | Participant) + (1 | Round), data = tidy1, family = binomial(link = "probit"))
+m0.1 <- glmer(Accuracy ~ 1 + (1 | Participant) + (1 | Round), data = cleaned_results, family = binomial(link = "probit"))
+summary(m0.1)
+summary(m0.1_unremoved)
+
+#adding Knowledge as fixed effect, does not converge, so can't include 
+glm1 <- update(Acc_model_base, .~. + Knowledge)
+glmer1 <- glmer(Accuracy ~ 1 + Knowledge + (1 | Participant) + (1 | Poem), data = cleaned_results, family = binomial(link = "probit"))
+glmer1_unremoved <- glmer(Accuracy ~ 1 + Knowledge + (1 | Participant) + (1 | Poem), data = tidy1, family = binomial(link = "probit"))
+summary(glm1)
+summary(glmer1)
+summary(glmer1_unremoved)
+
+#adding poem to the model. This decreases AIC.
+glmer4 <- glmer(Accuracy ~ 1  + (1 | Participant) + (1 | Poem), data = cleaned_results, family = binomial(link = "probit"))
+summary(glmer4)
+
+glmer4_unremoved <- glmer(Accuracy ~ 1 + (1 | Participant) + (1 | Poem), data = tidy1, family = binomial(link = "probit"))
+summary(glmer4_unremoved)
+
+#adding confidence to the model removed and unremoved
+glmer5 <- glmer(Accuracy ~ 1 + Confidence + (1 | Participant) + (1 | Poem), data = cleaned_results, family = binomial(link = "probit"))
+summary(glmer5)
+glmer5_unremoved <- glmer(Accuracy ~ 1 + Confidence + (1 | Participant) + (1 | Poem), data = tidy1, family = binomial(link = "probit"))
+summary(glmer5_unremoved)
+
+#adding demographics
+glmer3 <- glmer(Accuracy ~ 1 + Confidence + Education + Gender + (1 | Participant) + (1 | Poem), data = cleaned_results, family = binomial(link = "probit"))
+summary(glmer3) 
+glmer3_unremoved <- glmer(Accuracy ~ 1 + Confidence + Education + Gender + (1 | Participant) + (1 | Poem), data = tidy1, family = binomial(link = "probit")) 
+summary(glmer3_unremoved)
+
+#function for logodds to probabilities
+logit2prob <- function(logit){
+  odds <- exp(logit)
+  prob <- odds / (1 + odds)
+  return(prob)
+}
+
+library(stargazer)
+#creating tables for our models
+stargazer(glmer4_unremoved, glmer3_unremoved, type = "html", out = "unremoved_participants_final.html", title = "Unremoved participants models")
+stargazer(glmer4, glmer3, type = "html", out = "removed_participants_final.html", title = "removed participants models")
+
+```
+
+
